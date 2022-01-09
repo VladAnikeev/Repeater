@@ -5,7 +5,7 @@
 #include <arpa/inet.h>
 #include <iostream>
 
-#define PORT_REPEATER 9034
+#define PORT_REPEATER 9666
 #define PACKAGE_SIZE 256
 
 int main()

@@ -136,7 +136,12 @@ int main()
     };
     //ассоциативный массивы c сортировкой ключей
     std::map<int, clientData> fdClientServer; //связка клиент сервер
-    std::map<int, int> fdServerClient;        //связка сервер клиент
+    struct serverData
+    {
+        int fd_client;
+        std::chrono::system_clock::time_point start;
+    };
+    std::map<int, serverData> fdServerClient; //связка сервер клиент
 
     struct timeval tv = {}; //бесполезный таймер
 
@@ -208,17 +213,17 @@ int main()
                         //если это сервер
                         if ((fdServerClient.find(i) != fdServerClient.end()))
                         {
-                            FD_CLR(fdServerClient[i], &master);   //удаляем клиента из главного массива
-                            FD_CLR(fdServerClient[i], &read_fds); //удаляем клиенты из массива для чтения
-                            close(fdServerClient[i]);             //закрываем сокеты клиента
+                            FD_CLR(fdServerClient[i].fd_client, &master);   //удаляем клиента из главного массива
+                            FD_CLR(fdServerClient[i].fd_client, &read_fds); //удаляем клиенты из массива для чтения
+                            close(fdServerClient[i].fd_client);             //закрываем сокеты клиента
 
-                            std::cout << "Communication with client id#" << fdServerClient[i]
+                            std::cout << "Communication with client id#" << fdServerClient[i].fd_client
                                       << " is interrupted\n\n";
-                            log_file << "Communication with client id#" << fdServerClient[i]
+                            log_file << "Communication with client id#" << fdServerClient[i].fd_client
                                      << " is interrupted\n\n";
 
-                            fdClientServer.erase(fdServerClient[i]); //удаляем клиента из ассоциативного массива
-                            fdServerClient.erase(i);                 //удаляем клиента из ассоциативного массива
+                            fdClientServer.erase(fdServerClient[i].fd_client); //удаляем клиента из ассоциативного массива
+                            fdServerClient.erase(i);                           //удаляем клиента из ассоциативного массива
                         }
                         if ((fdClientServer.find(i) != fdClientServer.end()))
                         {
@@ -308,9 +313,10 @@ int main()
                                         {
                                             fd_max = new_fd;
                                         }
-                                        fdServerClient[new_fd] = i;                                 //серверу привязываем клиента
-                                        fdClientServer[i].fd_server = new_fd;                       //клиенту привязываем сервер
-                                        fdClientServer[i].start = std::chrono::system_clock::now(); //время реагирование клиента
+                                        fdServerClient[new_fd].fd_client = i;                            //серверу привязываем клиента
+                                        fdServerClient[new_fd].start = std::chrono::system_clock::now(); //время старта работы с сервером
+                                        fdClientServer[i].fd_server = new_fd;                            //клиенту привязываем сервер
+                                        fdClientServer[i].start = std::chrono::system_clock::now();      //время реагирование клиента
                                     }
                                 }
                             }
@@ -357,27 +363,28 @@ int main()
                             log_file << "Server id#" << i << " message:" << std::endl;
                             log_file << buf << std::endl;
 
-                            if (-1 == send(fdServerClient[i], (char *)&buf, sizeof(buf), 0))
+                            if (-1 == send(fdServerClient[i].fd_client, (char *)&buf, sizeof(buf), 0))
                             {
                                 //удаление полное
                                 std::cout << "Error: sending data, errno " << errno << std::endl;
                                 log_file << "Error: sending data, errno " << errno << std::endl;
-                                FD_CLR(i, &master);                   //удаляем из главного массива
-                                FD_CLR(i, &read_fds);                 //удаляем из массива для чтения
-                                FD_CLR(fdServerClient[i], &master);   //удаляем клиента из массива для чтения
-                                FD_CLR(fdServerClient[i], &read_fds); //удаляем клиента из главного массива
+                                FD_CLR(i, &master);                             //удаляем из главного массива
+                                FD_CLR(i, &read_fds);                           //удаляем из массива для чтения
+                                FD_CLR(fdServerClient[i].fd_client, &master);   //удаляем клиента из массива для чтения
+                                FD_CLR(fdServerClient[i].fd_client, &read_fds); //удаляем клиента из главного массива
 
-                                close(fdServerClient[i]); //клиент
-                                close(i);                 //сервер
+                                close(fdServerClient[i].fd_client); //клиент
+                                close(i);                           //сервер
                                 //убираем с ассоциативных массивов
-                                fdClientServer.erase(fdServerClient[i]);
+                                fdClientServer.erase(fdServerClient[i].fd_client);
                                 fdServerClient.erase(i);
                             }
                             else
                             {
-                                std::cout << "Sending data to the client #id" << fdServerClient[i] << std::endl
+                                fdServerClient[new_fd].start = std::chrono::system_clock::now(); //время последнего реагирование сервера
+                                std::cout << "Sending data to the client #id" << fdServerClient[i].fd_client << std::endl
                                           << std::endl;
-                                log_file << "Sending data to the client #id" << fdServerClient[i] << std::endl
+                                log_file << "Sending data to the client #id" << fdServerClient[i].fd_client << std::endl
                                          << std::endl;
                             }
                         }
@@ -385,33 +392,64 @@ int main()
                 }
             }
 
-            else if ((i > 3) && FD_ISSET(i, &master) && (fdClientServer.find(i) != fdClientServer.end()))
+            else if ((i > 3) && FD_ISSET(i, &master))
             { //если это не слушатель, если есть в главном массиве файловых дескрипторов, если есть в ассоциативном массиве клиентов
 
-                std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+                if (fdClientServer.find(i) != fdClientServer.end())
+                {
+                    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 
-                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - fdClientServer[i].start).count() > WAITING_TIME)
-                { //если таймер истек, таймер на  30 секунд
+                    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - fdClientServer[i].start).count() > WAITING_TIME)
+                    { //если таймер истек, таймер на  30 секунд
 
-                    FD_CLR(i, &master);   //удаляем из главного массива
-                    FD_CLR(i, &read_fds); //удаляем из массива для чтения
+                        FD_CLR(i, &master);   //удаляем из главного массива
+                        FD_CLR(i, &read_fds); //удаляем из массива для чтения
 
-                    //закрываем сокеты клиента
-                    close(i);
+                        //закрываем сокеты клиента
+                        close(i);
 
-                    if (fdClientServer[i].fd_server)
-                    {
-                        FD_CLR(fdClientServer[i].fd_server, &master);      //удаляем сервер из главного массива
-                        FD_CLR(fdClientServer[i].fd_server, &read_fds);    //удаляем сервер из массива для чтения
-                        close(fdClientServer[i].fd_server);                //закрываем сокеты сервера
-                        fdServerClient.erase(fdClientServer[i].fd_server); //удаляем сервер из ассоциативного массива
+                        if (fdClientServer[i].fd_server)
+                        {
+                            FD_CLR(fdClientServer[i].fd_server, &master);      //удаляем сервер из главного массива
+                            FD_CLR(fdClientServer[i].fd_server, &read_fds);    //удаляем сервер из массива для чтения
+                            close(fdClientServer[i].fd_server);                //закрываем сокеты сервера
+                            fdServerClient.erase(fdClientServer[i].fd_server); //удаляем сервер из ассоциативного массива
+                        }
+                        fdClientServer.erase(i); //удаляем клиент из ассоциативного массива
+
+                        std::cout << "Disconnecting for a long wait client #id" << i << std::endl
+                                  << std::endl;
+                        log_file << "Disconnecting for a long wait client #id" << i << std::endl
+                                 << std::endl;
                     }
-                    fdClientServer.erase(i); //удаляем клиент из ассоциативного массива
+                }
+                else if (fdServerClient.find(i) != fdServerClient.end())
+                {
+                    {
+                        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 
-                    std::cout << "Disconnecting for a long wait client #id" << i << std::endl
-                              << std::endl;
-                    log_file << "Disconnecting for a long wait client #id" << i << std::endl
-                             << std::endl;
+                        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - fdServerClient[i].start).count() > WAITING_TIME)
+                        { //если таймер истек, таймер на  30 секунд
+
+                            FD_CLR(i, &master);   //удаляем из главного массива
+                            FD_CLR(i, &read_fds); //удаляем из массива для чтения
+
+                            //закрываем сокеты клиента
+                            close(i);
+
+                            FD_CLR(fdServerClient[i].fd_client, &master);      //удаляем сервер из главного массива
+                            FD_CLR(fdServerClient[i].fd_client, &read_fds);    //удаляем сервер из массива для чтения
+                            close(fdServerClient[i].fd_client);                //закрываем сокеты сервера
+                            fdClientServer.erase(fdServerClient[i].fd_client); //удаляем сервер из ассоциативного массива
+
+                            fdServerClient.erase(i); //удаляем клиент из ассоциативного массива
+
+                            std::cout << "Disconnecting for a long wait server #id" << i << std::endl
+                                      << std::endl;
+                            log_file << "Disconnecting for a long wait server #id" << i << std::endl
+                                     << std::endl;
+                        }
+                    }
                 }
             }
         }
