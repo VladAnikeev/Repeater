@@ -12,6 +12,8 @@
 #include <fstream>
 #include "Constants.h"
 
+using namespace std::chrono;
+
 void printIP(sockaddr *client, std::ofstream &log_file)
 {
     char clientIP[INET6_ADDRSTRLEN];  // INET6_ADDRSTRLEN = 46
@@ -21,12 +23,37 @@ void printIP(sockaddr *client, std::ofstream &log_file)
                   clientIP, INET6_ADDRSTRLEN); //записоваем char IP
     }
     else
-    { //семейство IPv6
+    { //семейство IPv6/home/user/Рабочий стол/repeater/Repeater/Repeater.cpp
         inet_ntop(client->sa_family, &(((sockaddr_in6 *)client)->sin6_addr),
                   clientIP, INET6_ADDRSTRLEN); //записоваем char IP
     }
     std::cout << "IP: " << clientIP << std::endl;
     log_file << "IP: " << clientIP << std::endl;
+}
+
+//логирование ошибок
+void errorLog(const char *nameError, std::ostream &logFile)
+{
+    std::cout << nameError << errno << std::endl;
+    logFile << nameError << errno << std::endl;
+}
+
+//логирование
+void logging(const char *massage, std::ofstream &log_file)
+{
+    std::cout << massage << std::endl;
+    log_file << massage << std::endl;
+}
+void logging(const char *massage, int id, std::ofstream &log_file)
+{
+    std::cout << massage << id << std::endl;
+    log_file << massage << id << std::endl;
+}
+void logging(const char *massage1, int id,
+             const char *massage2, std::ofstream &log_file)
+{
+    std::cout << massage1 << id << massage2 << std::endl;
+    log_file << massage1 << id << massage2 << std::endl;
 }
 
 int main()
@@ -53,8 +80,7 @@ int main()
         log_file << "Error: " << gai_strerror(error) << std::endl;
         return 1;
     }
-    std::cout << "Basic setup passed\n";
-    log_file << "Basic setup passed\n";
+    logging("Basic setup passed", log_file);
 
     int listener; // дескриптор слушаемого сокета
 
@@ -85,24 +111,22 @@ int main()
 
     if (temporary == NULL)
     {
-        std::cout << "Error: failed to bind, errno " << errno << std::endl;
-        log_file << "Error: failed to bind, errno " << errno << std::endl;
+        errorLog("Error: failed to bind, errno ", log_file);
         return 2;
     }
-    std::cout << "Successful port binding\n";
-    log_file << "Successful port binding\n";
+    logging("Successful port binding", log_file);
 
     freeaddrinfo(ready); //закончили с данными с созданием сокета
 
     //слушаем, 10 клиентов
     if (listen(listener, MAX_CLIENTS) == -1)
     {
-        std::cout << "Error: listen, errno " << errno << std::endl;
-        log_file << "Error: listen, errno " << errno << std::endl;
+        errorLog("Error: listen, errno ", log_file);
         return 3;
     }
-    std::cout << "The audition went well\n\n";
-    log_file << "The audition went well\n\n";
+    logging("The audition went well", log_file);
+    std::cout << std::endl;
+    log_file << std::endl;
 
     //пакет для клиента подключающего первый раз
     struct IpPortData
@@ -132,14 +156,14 @@ int main()
     struct clientData
     {
         int fd_server;
-        std::chrono::system_clock::time_point start;
+        system_clock::time_point start;
     };
     //ассоциативный массивы c сортировкой ключей
     std::map<int, clientData> fdClientServer; //связка клиент сервер
     struct serverData
     {
         int fd_client;
-        std::chrono::system_clock::time_point start;
+        system_clock::time_point start;
     };
     std::map<int, serverData> fdServerClient; //связка сервер клиент
 
@@ -153,8 +177,7 @@ int main()
         //функция мониторит массивы файловых дескрипторов
         if (select(fd_max + 1, &read_fds, NULL, NULL, &tv) == -1)
         {
-            std::cout << "Error: select, errno " << errno << std::endl;
-            log_file << "Error: select, errno " << errno << std::endl;
+            errorLog("Error: select, errno ", log_file);
             return 4;
         }
         //обрабатываем массив
@@ -170,8 +193,7 @@ int main()
                     new_fd = accept(listener, (struct sockaddr *)&client_addr, &addrlen);
                     if (new_fd == -1)
                     {
-                        std::cout << "Error: accept, errno " << errno << std::endl;
-                        log_file << "Error: accept, errno " << errno << std::endl;
+                        errorLog("Error: accept, errno ", log_file);
                     }
                     else
                     {
@@ -180,10 +202,10 @@ int main()
                         {
                             fd_max = new_fd;
                         }
-                        fdClientServer[new_fd].fd_server = 0;                            //клиент без сервера
-                        fdClientServer[new_fd].start = std::chrono::system_clock::now(); //время создание
-                        std::cout << "New client #id" << new_fd << ", ";                 //выводим IP клиента
-                        log_file << "New client #id" << new_fd << ", ";
+                        fdClientServer[new_fd].fd_server = 0;               //клиент без сервера
+                        fdClientServer[new_fd].start = system_clock::now(); //время создание
+
+                        logging("New clientIPv4 #id", new_fd, log_file);
                         printIP((struct sockaddr *)&client_addr, log_file); //выводим адрес клиента
                     }
                 }
@@ -196,15 +218,13 @@ int main()
                         if (incoming_bytes == 0)
                         {
                             // соединение закрыто
-                            std::cout << "Communication with id#" << i
-                                      << " is interrupted\n\n";
-                            log_file << "Communication with id#" << i
-                                     << " is interrupted\n\n";
+                            logging("Communication is interrupted with id#", i, log_file);
+                            std::cout << std::endl;
+                            log_file << std::endl;
                         }
                         else // это уже ошибка
                         {
-                            std::cout << "Error: recv, errno " << errno << " client id#" << i << std::endl;
-                            log_file << "Error: recv, errno " << errno << " client id#" << i << std::endl;
+                            errorLog("Error: recv, errno ", log_file);
                         }
                         FD_CLR(i, &master);   //удаляем из главного массива
                         FD_CLR(i, &read_fds); //удаляем из массива для чтения
@@ -213,37 +233,31 @@ int main()
                         //если это сервер
                         if ((fdServerClient.find(i) != fdServerClient.end()))
                         {
-                            FD_CLR(fdServerClient[i].fd_client, &master);   //удаляем клиента из главного массива
-                            FD_CLR(fdServerClient[i].fd_client, &read_fds); //удаляем клиенты из массива для чтения
-                            close(fdServerClient[i].fd_client);             //закрываем сокеты клиента
-
-                            std::cout << "Communication with client id#" << fdServerClient[i].fd_client
-                                      << " is interrupted\n\n";
-                            log_file << "Communication with client id#" << fdServerClient[i].fd_client
-                                     << " is interrupted\n\n";
-
+                            FD_CLR(fdServerClient[i].fd_client, &master);      //удаляем клиента из главного массива
+                            FD_CLR(fdServerClient[i].fd_client, &read_fds);    //удаляем клиенты из массива для чтения
+                            close(fdServerClient[i].fd_client);                //закрываем сокеты клиента
                             fdClientServer.erase(fdServerClient[i].fd_client); //удаляем клиента из ассоциативного массива
                             fdServerClient.erase(i);                           //удаляем клиента из ассоциативного массива
+
+                            logging("Communication is interrupted clientIPv4 with id#", fdServerClient[i].fd_client, log_file);
+                            std::cout << std::endl;
+                            log_file << std::endl;
                         }
-                        if ((fdClientServer.find(i) != fdClientServer.end()))
+                        else //если это клиент
                         {
-                            if (fdClientServer[i].fd_server)
+                            if (fdClientServer[i].fd_server) //если есть у клиента сервер
                             {
-
-                                FD_CLR(fdClientServer[i].fd_server, &master);   //удаляем сервер из главного массива
-                                FD_CLR(fdClientServer[i].fd_server, &read_fds); //удаляем сервер из массива для чтения
-
-                                std::cout << "Communication with server id#" << fdClientServer[i].fd_server
-                                          << " is interrupted\n\n";
-                                log_file << "Communication with server id#" << fdClientServer[i].fd_server
-                                         << " is interrupted\n\n";
-
+                                FD_CLR(fdClientServer[i].fd_server, &master);      //удаляем сервер из главного массива
+                                FD_CLR(fdClientServer[i].fd_server, &read_fds);    //удаляем сервер из массива для чтения
                                 close(fdClientServer[i].fd_server);                //закрываем сокеты сервера
                                 fdServerClient.erase(fdClientServer[i].fd_server); //удаляем сервер из ассоциативного массива
+
+                                logging("Communication is interrupted with serverIPv6 id#", fdClientServer[i].fd_server, log_file);
+                                std::cout << std::endl;
+                                log_file << std::endl;
                             }
                             fdClientServer.erase(i); //удаляем клиент из ассоциативного массива
                         }
-                        //сервер -клиент
                     }
                     else //успешно получены данные, тогда обрабатываем
                     {
@@ -255,12 +269,12 @@ int main()
                                 firstPacket = *((IpPortData *)&buf); //разбиваем пакет на структуру
 
                                 //выводим струтуру
-                                std::cout << "Client message:\n";
+                                logging("ClientIPv4 message:", log_file);
+                                //в консоль
                                 std::cout << "IP - " << firstPacket.IPv6 << std::endl;
                                 std::cout << "Port - " << firstPacket.port << std::endl;
                                 std::cout << "Data - " << firstPacket.data << std::endl;
-
-                                log_file << "Client message:\n";
+                                //в файл
                                 log_file << "IP - " << firstPacket.IPv6 << std::endl;
                                 log_file << "Port - " << firstPacket.port << std::endl;
                                 log_file << "Data - " << firstPacket.data << std::endl;
@@ -276,8 +290,8 @@ int main()
                                 //подключаемся к серверу
                                 if (-1 == connect(new_fd, (struct sockaddr *)&servaddr6, sizeof(servaddr6)))
                                 {
-                                    std::cout << "Error: connecting to the server, errno " << errno << std::endl;
-                                    log_file << "Error: connecting to the server, errno " << errno << std::endl;
+                                    //не удачное подключение
+                                    errorLog("Error: connecting to the serverIPv6 ", log_file);
                                     FD_CLR(i, &master);   //удаляем из главного массива
                                     FD_CLR(i, &read_fds); //удаляем из массива для чтения
                                     //закрываем все в сокеты
@@ -288,16 +302,15 @@ int main()
                                 }
                                 else //удачное подключение
                                 {
-                                    std::cout << "Connecting to the server id#" << new_fd << std::endl
-                                              << std::endl;
-                                    log_file << "Connecting to the server id#" << new_fd << std::endl
-                                             << std::endl;
+                                    logging("Connecting to the serverIPv6 id#", new_fd, log_file);
+                                    std::cout << std::endl;
+                                    log_file << std::endl;
 
                                     //отправляем серверу данные
                                     if (-1 == send(new_fd, (char *)&firstPacket.data, sizeof(firstPacket.data), 0))
                                     {
-                                        std::cout << "Error: sending data, errno " << errno << std::endl;
-                                        log_file << "Error: sending data, errno " << errno << std::endl;
+                                        errorLog("Error: sending data ", log_file);
+
                                         FD_CLR(i, &master);   //удаляем из главного массива
                                         FD_CLR(i, &read_fds); //удаляем из массива для чтения
                                         //закрываем все в сокеты
@@ -313,27 +326,23 @@ int main()
                                         {
                                             fd_max = new_fd;
                                         }
-                                        fdServerClient[new_fd].fd_client = i;                            //серверу привязываем клиента
-                                        fdServerClient[new_fd].start = std::chrono::system_clock::now(); //время старта работы с сервером
-                                        fdClientServer[i].fd_server = new_fd;                            //клиенту привязываем сервер
-                                        fdClientServer[i].start = std::chrono::system_clock::now();      //время реагирование клиента
+                                        fdServerClient[new_fd].fd_client = i;               //серверу привязываем клиента
+                                        fdClientServer[i].fd_server = new_fd;               //клиенту привязываем сервер
+                                        fdServerClient[new_fd].start = system_clock::now(); //время старта работы с сервером
+                                        fdClientServer[i].start = system_clock::now();      //время реагирование клиента
                                     }
                                 }
                             }
                             else //если уже у клиента есть присоединенный сервер
                             {
-                                std::cout << "Cliend id#" << i << " message:" << std::endl;
-                                std::cout << buf << std::endl;
-
-                                log_file << "Cliend id#" << i << " message:" << std::endl;
-                                log_file << buf << std::endl;
+                                logging("CliendIPv4 id#", i, " message:", log_file);
+                                logging(buf, log_file);
 
                                 //отправляем данные для клиента
                                 if (-1 == send(fdClientServer[i].fd_server, (char *)&buf, sizeof(buf), 0))
                                 {
                                     //удаление полное
-                                    std::cout << "Error: sending data, errno " << errno << std::endl;
-                                    log_file << "Error: sending data, errno " << errno << std::endl;
+                                    errorLog("Error: sending data, errno ", log_file);
 
                                     FD_CLR(i, &master);                             //удаляем из главного массива
                                     FD_CLR(i, &read_fds);                           //удаляем из массива для чтения
@@ -348,26 +357,23 @@ int main()
                                 }
                                 else
                                 {
-                                    fdClientServer[i].start = std::chrono::system_clock::now(); //время реагирование клиента
-                                    std::cout << "Sending data to the server #id" << fdClientServer[i].fd_server << std::endl
-                                              << std::endl;
-                                    log_file << "Sending data to the server #id" << fdClientServer[i].fd_server << std::endl
-                                             << std::endl;
+                                    logging("Sending data to the serverIPv6 #id", fdClientServer[i].fd_server, log_file);
+                                    std::cout << std::endl;
+                                    log_file << std::endl;
+                                    fdClientServer[i].start = system_clock::now(); //время реагирование клиента
                                 }
                             }
                         }
                         else //тут принимаем сообщения от сервера
                         {
-                            std::cout << "Server id#" << i << " message:" << std::endl;
-                            std::cout << buf << std::endl;
-                            log_file << "Server id#" << i << " message:" << std::endl;
-                            log_file << buf << std::endl;
+                            logging("ServerIPv6 id#", i, " message:", log_file);
+                            logging(buf, log_file);
 
                             if (-1 == send(fdServerClient[i].fd_client, (char *)&buf, sizeof(buf), 0))
                             {
                                 //удаление полное
-                                std::cout << "Error: sending data, errno " << errno << std::endl;
-                                log_file << "Error: sending data, errno " << errno << std::endl;
+                                errorLog("Error: sending data, errno ", log_file);
+
                                 FD_CLR(i, &master);                             //удаляем из главного массива
                                 FD_CLR(i, &read_fds);                           //удаляем из массива для чтения
                                 FD_CLR(fdServerClient[i].fd_client, &master);   //удаляем клиента из массива для чтения
@@ -381,11 +387,10 @@ int main()
                             }
                             else
                             {
-                                fdServerClient[new_fd].start = std::chrono::system_clock::now(); //время последнего реагирование сервера
-                                std::cout << "Sending data to the client #id" << fdServerClient[i].fd_client << std::endl
-                                          << std::endl;
-                                log_file << "Sending data to the client #id" << fdServerClient[i].fd_client << std::endl
-                                         << std::endl;
+                                fdServerClient[i].start = system_clock::now(); //время последнего реагирование сервера
+                                logging("Sending data to the clientIPv4 #id", fdServerClient[i].fd_client, log_file);
+                                std::cout << std::endl;
+                                log_file << std::endl;
                             }
                         }
                     }
@@ -397,9 +402,9 @@ int main()
 
                 if (fdClientServer.find(i) != fdClientServer.end())
                 {
-                    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+                    system_clock::time_point now = system_clock::now();
 
-                    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - fdClientServer[i].start).count() > WAITING_TIME)
+                    if (duration_cast<milliseconds>(now - fdClientServer[i].start).count() > WAITING_TIME)
                     { //если таймер истек, таймер на  30 секунд
 
                         FD_CLR(i, &master);   //удаляем из главного массива
@@ -417,18 +422,17 @@ int main()
                         }
                         fdClientServer.erase(i); //удаляем клиент из ассоциативного массива
 
-                        std::cout << "Disconnecting for a long wait client #id" << i << std::endl
-                                  << std::endl;
-                        log_file << "Disconnecting for a long wait client #id" << i << std::endl
-                                 << std::endl;
+                        logging("Disconnecting for a long wait clientIPv4 #id", i, log_file);
+                        std::cout << std::endl;
+                        log_file << std::endl;
                     }
                 }
                 else if (fdServerClient.find(i) != fdServerClient.end())
                 {
                     {
-                        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+                        system_clock::time_point now = system_clock::now();
 
-                        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - fdServerClient[i].start).count() > WAITING_TIME)
+                        if (duration_cast<milliseconds>(now - fdServerClient[i].start).count() > WAITING_TIME)
                         { //если таймер истек, таймер на  30 секунд
 
                             FD_CLR(i, &master);   //удаляем из главного массива
@@ -444,10 +448,9 @@ int main()
 
                             fdServerClient.erase(i); //удаляем клиент из ассоциативного массива
 
-                            std::cout << "Disconnecting for a long wait server #id" << i << std::endl
-                                      << std::endl;
-                            log_file << "Disconnecting for a long wait server #id" << i << std::endl
-                                     << std::endl;
+                            logging("Disconnecting for a long wait serverIPv6 #id", i, log_file);
+                            std::cout << std::endl;
+                            log_file << std::endl;
                         }
                     }
                 }
