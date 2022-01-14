@@ -6,96 +6,91 @@
 #include <arpa/inet.h>
 #include <iostream>
 
-#define PORT 16556
+#define PORT 5000
 #define HEARING_TIME 2048 // 2048 - время слушания
-#define PACKAGE_SIZE 256
+#define PACKAGE_SIZE 1024
 
 int main()
 {
     std::cout << "Server start\n";
 
-    struct sockaddr_in6 servaddr6 = {};     //зануление
-    servaddr6.sin6_family = AF_INET6;       // AF_INET - семейство IPv4
-    servaddr6.sin6_port = htons(PORT);      //порт
-    servaddr6.sin6_addr = IN6ADDR_ANY_INIT; //локальный ip,
+    struct sockaddr_in6 servaddr = {}; //зануление
+    servaddr.sin6_family = AF_INET6;   // AF_INET - семейство IPv4
+    servaddr.sin6_port = htons(PORT);  //порт
+    inet_pton(AF_INET6, "::1", &(servaddr.sin6_addr));
 
-    int sockfd6 = socket(AF_INET6, SOCK_STREAM, 0);
+    int sockfd = socket(AF_INET6, SOCK_STREAM, 0);
     //создание сокета, AF_INET6 - семейство IPv6, SOCK_STREAM - тип сокета
-    if (-1 == sockfd6)
+    if (-1 == sockfd)
     {
         std::cout << "Error in socket creation\n";
-        close(sockfd6);
+        close(sockfd);
         return 1;
     }
     std::cout << "A socket was created\n";
 
     int yes = 1;
-    setsockopt(sockfd6, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
 
     //биндим
-    if (0 != bind(sockfd6, (struct sockaddr *)&servaddr6, sizeof(servaddr6)))
+    if (0 != bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)))
     {
         std::cout << "Error in binding a socket to an IP address/Port pair\n";
-        close(sockfd6);
+        close(sockfd);
         return 2;
     }
     std::cout << "Connected to the port\n";
 
     //слушаем
-    if (-1 == listen(sockfd6, HEARING_TIME))
+    if (-1 == listen(sockfd, HEARING_TIME))
     {
         std::cout << "Error in listening\n";
-        close(sockfd6);
+        close(sockfd);
         return 3;
     }
     std::cout << "Listening to the port...\n";
 
     //создаем новую структуру для клиента
-    sockaddr_in6 clientInfo = {};
+    sockaddr_in clientInfo = {};
     socklen_t sizeClientInfo = sizeof(clientInfo);
 
     //потверждаем подключение клиента
-    int connfd = accept(sockfd6, (sockaddr *)&clientInfo, &sizeClientInfo);
+    int connfd = accept(sockfd, (sockaddr *)&clientInfo, &sizeClientInfo);
     if (-1 == connfd)
     {
         std::cout << "Error in connection confirmation\n";
-        close(sockfd6);
+        close(sockfd);
         close(connfd);
         return 4;
     }
     std::cout << "Confirmation of connection\n";
 
-    char buf[PACKAGE_SIZE]; //буфер для данных
-
+    char buf[PACKAGE_SIZE] = {0}; //буфер для данных
+    std::string string_buf;
     //слушаем первый пакет
-    if (-1 == recv(connfd, (char *)&buf, PACKAGE_SIZE - 48, 0))
-    {
-        std::cout << "Error in receiving data\n";
-        close(sockfd6);
-        close(connfd);
-        return 5;
-    }
-    std::cout << "client message: " << buf << std::endl;
-
     while (true)
-    {   
+    {
         //слушаем
         if (-1 == recv(connfd, (char *)&buf, sizeof(buf), 0))
         {
             std::cout << "Error in receiving data\n";
-            close(sockfd6);
+            close(sockfd);
             close(connfd);
             return 6;
         }
         std::cout << "client message: " << buf << std::endl;
-
+        string_buf += "server response ";
+        string_buf += buf;
+        memset(buf, 0, PACKAGE_SIZE);
+        string_buf.copy(buf, string_buf.size());
         //отправка данных
         if (-1 == send(connfd, (char *)&buf, sizeof(buf), 0))
         {
             std::cout << "Error in sending data\n";
-            close(sockfd6);
+            close(sockfd);
             close(connfd);
             return 7;
         }
+        string_buf.clear();
     }
 }

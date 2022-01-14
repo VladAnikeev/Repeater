@@ -11,8 +11,11 @@
 #include <chrono>
 #include <fstream>
 #include "Constants.h"
+#include "hex.h"
 
 using namespace std::chrono;
+
+Hex toHex;
 
 void printIP(sockaddr *client, std::ofstream &log_file)
 {
@@ -28,32 +31,32 @@ void printIP(sockaddr *client, std::ofstream &log_file)
                   clientIP, INET6_ADDRSTRLEN); //записоваем char IP
     }
     std::cout << "IP: " << clientIP << std::endl;
-    log_file << "IP: " << clientIP << std::endl;
+    log_file << toHex.stringToHEx("IP: " + std::string(clientIP)) << std::endl;
 }
 
 //логирование ошибок
 void errorLog(const char *nameError, std::ostream &logFile)
 {
     std::cout << nameError << errno << std::endl;
-    logFile << nameError << errno << std::endl;
+    logFile << toHex.stringToHEx(nameError + toHex.intToHEX(errno)) << std::endl;
 }
 
 //логирование
 void logging(const char *massage, std::ofstream &log_file)
 {
     std::cout << massage << std::endl;
-    log_file << massage << std::endl;
+    log_file << toHex.stringToHEx(massage) << std::endl;
 }
 void logging(const char *massage, int id, std::ofstream &log_file)
 {
     std::cout << massage << id << std::endl;
-    log_file << massage << id << std::endl;
+    log_file << toHex.stringToHEx(massage + toHex.intToHEX(id)) << std::endl;
 }
 void logging(const char *massage1, int id,
              const char *massage2, std::ofstream &log_file)
 {
     std::cout << massage1 << id << massage2 << std::endl;
-    log_file << massage1 << id << massage2 << std::endl;
+    log_file << toHex.stringToHEx(massage1 + toHex.intToHEX(id) + massage2) << std::endl;
 }
 
 int main()
@@ -77,7 +80,7 @@ int main()
     if (int error = getaddrinfo(NULL, PORT, &initial, &ready))
     {
         std::cout << "Error: " << gai_strerror(error) << std::endl;
-        log_file << "Error: " << gai_strerror(error) << std::endl;
+        log_file << toHex.stringToHEx("Error: " + std::string(gai_strerror(error))) << std::endl;
         return 1;
     }
     logging("Basic setup passed", log_file);
@@ -126,16 +129,15 @@ int main()
     }
     logging("The audition went well", log_file);
     std::cout << std::endl;
-    log_file << std::endl;
 
     //пакет для клиента подключающего первый раз
     struct IpPortData
     {
-        char IPv6[INET6_ADDRSTRLEN];  // INET6_ADDRSTRLEN = 46, хранит адресс
-        unsigned short port;          //порт
-        char data[PACKAGE_SIZE - 48]; //доп данные
+        char IPv6[INET6_ADDRSTRLEN]; // INET6_ADDRSTRLEN = 46, хранит адресс
+        unsigned short port;         //порт
+        // char data[PACKAGE_SIZE - 48]; //доп данные
         //буфер 256, short 2, IPv6 46
-        // 256 - 46 - 2 = 208
+        //  256 - 46 - 2 = 208
     };
     IpPortData firstPacket = {};
 
@@ -148,7 +150,7 @@ int main()
 
     int fd_max = listener;        // максимальный номер файлового дескриптора
     int new_fd;                   // новопринятый дескриптор сокета
-    char buf[PACKAGE_SIZE];       // буфер для данных клиента
+    char buf[PACKAGE_SIZE] = {};  // буфер для данных клиента
     sockaddr_storage client_addr; // адрес клиента, sockaddr_storage - кроссплатформа для IPv4 и IPv6
 
     int incoming_bytes; //пришедшие байты
@@ -213,14 +215,13 @@ int main()
                 {
                     // получение данных от клиента
                     if ((incoming_bytes = recv(i, (char *)&buf, sizeof buf, 0)) <= 0)
-                    {
+                    { //что не так
                         //соединение закрыто клиентом
                         if (incoming_bytes == 0)
                         {
                             // соединение закрыто
                             logging("Communication is interrupted with id#", i, log_file);
                             std::cout << std::endl;
-                            log_file << std::endl;
                         }
                         else // это уже ошибка
                         {
@@ -241,7 +242,6 @@ int main()
 
                             logging("Communication is interrupted clientIPv4 with id#", fdServerClient[i].fd_client, log_file);
                             std::cout << std::endl;
-                            log_file << std::endl;
                         }
                         else //если это клиент
                         {
@@ -254,7 +254,6 @@ int main()
 
                                 logging("Communication is interrupted with serverIPv6 id#", fdClientServer[i].fd_server, log_file);
                                 std::cout << std::endl;
-                                log_file << std::endl;
                             }
                             fdClientServer.erase(i); //удаляем клиент из ассоциативного массива
                         }
@@ -266,27 +265,36 @@ int main()
                         {
                             if (fdClientServer[i].fd_server == 0) //если у клиента нет сервера
                             {
-                                firstPacket = *((IpPortData *)&buf); //разбиваем пакет на структуру
+                                std::string string_buf(buf);
+                                int indexSpace = string_buf.find_first_of(' ', 0); //ищем разделитель
 
-                                //выводим струтуру
+                                char adressIPv6[INET6_ADDRSTRLEN] = {0};    //адрес сервера
+                                string_buf.copy(adressIPv6, indexSpace, 0); //копируем из буфера
+
+                                char portIPv6[INET6_ADDRSTRLEN] = {0};                                 //порт сервера
+                                string_buf.copy(portIPv6, string_buf.size() - indexSpace, indexSpace); //копируем
+                                int portServera = std::stoi(portIPv6);
+
                                 logging("ClientIPv4 message:", log_file);
+
                                 //в консоль
-                                std::cout << "IP - " << firstPacket.IPv6 << std::endl;
-                                std::cout << "Port - " << firstPacket.port << std::endl;
-                                std::cout << "Data - " << firstPacket.data << std::endl;
+
+                                std::cout << "IP - " << adressIPv6 << std::endl;
+                                std::cout << "Port - " << portServera << std::endl;
+
                                 //в файл
-                                log_file << "IP - " << firstPacket.IPv6 << std::endl;
-                                log_file << "Port - " << firstPacket.port << std::endl;
-                                log_file << "Data - " << firstPacket.data << std::endl;
+
+                                log_file << toHex.stringToHEx("IP - " + std::string(adressIPv6)) << std::endl;
+                                log_file << toHex.stringToHEx("Port - " + toHex.intToHEX(portServera)) << std::endl;
 
                                 //создаем данные для подключаемся клиенту
-                                sockaddr_in6 servaddr6 = {};                                   //зануление
-                                servaddr6.sin6_family = AF_INET6;                              // AF_INET6 - семейство IPv6
-                                inet_pton(AF_INET6, firstPacket.IPv6, &(servaddr6.sin6_addr)); //Заносим IPv6 адрес сервера
-                                servaddr6.sin6_port = htons(firstPacket.port);                 //порт
+                                sockaddr_in6 servaddr6 = {};                             //зануление
+                                servaddr6.sin6_family = AF_INET6;                        // AF_INET6 - семейство IPv6
+                                inet_pton(AF_INET6, adressIPv6, &(servaddr6.sin6_addr)); //Заносим IPv6 адрес сервера
+                                servaddr6.sin6_port = htons(portServera);                //порт
 
                                 int new_fd = socket(AF_INET6, SOCK_STREAM, 0); //создаем сокет
-
+                                memset(buf, 0, PACKAGE_SIZE);                  //зануляем буфер
                                 //подключаемся к серверу
                                 if (-1 == connect(new_fd, (struct sockaddr *)&servaddr6, sizeof(servaddr6)))
                                 {
@@ -304,33 +312,18 @@ int main()
                                 {
                                     logging("Connecting to the serverIPv6 id#", new_fd, log_file);
                                     std::cout << std::endl;
-                                    log_file << std::endl;
 
                                     //отправляем серверу данные
-                                    if (-1 == send(new_fd, (char *)&firstPacket.data, sizeof(firstPacket.data), 0))
-                                    {
-                                        errorLog("Error: sending data ", log_file);
 
-                                        FD_CLR(i, &master);   //удаляем из главного массива
-                                        FD_CLR(i, &read_fds); //удаляем из массива для чтения
-                                        //закрываем все в сокеты
-                                        close(new_fd);
-                                        close(i);
-                                        //убираем с ассоциативного массивов
-                                        fdClientServer.erase(i);
-                                    }
-                                    else //если присоединились и отправили данные – то добавляем в массивы
+                                    FD_SET(new_fd, &master); //добавляем в главный массив
+                                    if (new_fd > fd_max)     //меняем макс файловый дискриптор
                                     {
-                                        FD_SET(new_fd, &master); //добавляем в главный массив
-                                        if (new_fd > fd_max)     //меняем макс файловый дискриптор
-                                        {
-                                            fd_max = new_fd;
-                                        }
-                                        fdServerClient[new_fd].fd_client = i;               //серверу привязываем клиента
-                                        fdClientServer[i].fd_server = new_fd;               //клиенту привязываем сервер
-                                        fdServerClient[new_fd].start = system_clock::now(); //время старта работы с сервером
-                                        fdClientServer[i].start = system_clock::now();      //время реагирование клиента
+                                        fd_max = new_fd;
                                     }
+                                    fdServerClient[new_fd].fd_client = i;               //серверу привязываем клиента
+                                    fdClientServer[i].fd_server = new_fd;               //клиенту привязываем сервер
+                                    fdServerClient[new_fd].start = system_clock::now(); //время старта работы с сервером
+                                    fdClientServer[i].start = system_clock::now();      //время реагирование клиента
                                 }
                             }
                             else //если уже у клиента есть присоединенный сервер
@@ -359,9 +352,9 @@ int main()
                                 {
                                     logging("Sending data to the serverIPv6 #id", fdClientServer[i].fd_server, log_file);
                                     std::cout << std::endl;
-                                    log_file << std::endl;
                                     fdClientServer[i].start = system_clock::now(); //время реагирование клиента
                                 }
+                                memset(buf, 0, PACKAGE_SIZE); //зануляем буфер
                             }
                         }
                         else //тут принимаем сообщения от сервера
@@ -390,8 +383,8 @@ int main()
                                 fdServerClient[i].start = system_clock::now(); //время последнего реагирование сервера
                                 logging("Sending data to the clientIPv4 #id", fdServerClient[i].fd_client, log_file);
                                 std::cout << std::endl;
-                                log_file << std::endl;
                             }
+                            memset(buf, 0, PACKAGE_SIZE); //зануляем буфер
                         }
                     }
                 }
@@ -424,7 +417,6 @@ int main()
 
                         logging("Disconnecting for a long wait clientIPv4 #id", i, log_file);
                         std::cout << std::endl;
-                        log_file << std::endl;
                     }
                 }
                 else if (fdServerClient.find(i) != fdServerClient.end())
@@ -450,7 +442,6 @@ int main()
 
                             logging("Disconnecting for a long wait serverIPv6 #id", i, log_file);
                             std::cout << std::endl;
-                            log_file << std::endl;
                         }
                     }
                 }
