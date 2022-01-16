@@ -13,7 +13,7 @@ private:
 
 public:
     Hex();
-    std::string stringToHEx(const std::string &data, int type=0);
+    std::string stringToHEX(const std::string &data, int type=0);
     std::string intToHEX(int data, int cells = 2);
     ~Hex();
 };
@@ -28,7 +28,7 @@ std::string Hex::intToHEX(int data, int cells)
     return dataHEX.str();
 }
 
-std::string Hex::stringToHEx(const std::string &data, int type)
+std::string Hex::stringToHEX(const std::string &data, int type)
 {
     //размер закодированной информмации В int и в HEX
     int dataSize = data.size();
